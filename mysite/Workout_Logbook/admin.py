@@ -1,3 +1,5 @@
 from django.contrib import admin
 
-# Register your models here.
+from Workout_Logbook.models import CustomUserExercise
+
+admin.site.register(CustomUserExercise)
