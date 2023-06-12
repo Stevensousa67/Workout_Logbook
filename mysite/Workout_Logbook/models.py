@@ -1,6 +1,80 @@
-from django.contrib.auth.models import User
+from django.contrib.auth.base_user import BaseUserManager
+from django.contrib.auth.models import AbstractUser
 from django.db import models
 from multiselectfield import MultiSelectField
+
+
+def get_photo_path(instance, filename):
+    import os
+    filename = f"{instance.status.user.email}/{instance.status.date.strftime('%Y-%m-%d')}"
+    return os.path.join('user-photos', filename)
+
+
+class WorkoutUserManager(BaseUserManager):
+    def create_superuser(self, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError("User must have an email")
+        if not password:
+            raise ValueError("User must have a password")
+
+        user = self.model(
+            email=self.normalize_email(email)
+        )
+        user.set_password(password)
+        user.is_superuser = True
+        user.is_staff = True
+        user.is_active = True
+        user.height = 180
+        user.birthday = '1999-01-01'
+        user.gender = 'M'
+        user.save(using=self._db)
+        return user
+
+
+class WorkoutUser(AbstractUser):
+
+    class GenderChoices(models.TextChoices):
+        MALE = 'M', 'Male'
+        FEMA = 'F', 'Female'
+
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = []
+    username = None
+    email = models.EmailField('Email address', unique=True)
+    height = models.PositiveSmallIntegerField(verbose_name='Height (cm)')
+    birthday = models.DateField(verbose_name='Birth Day')
+    gender = models.CharField(verbose_name='Gender', max_length=2, choices=GenderChoices.choices, default=GenderChoices.MALE)
+
+    objects = WorkoutUserManager()
+
+
+class UserPhisyqueStatus(models.Model):
+    user = models.ForeignKey(to=WorkoutUser, on_delete=models.CASCADE)
+    date = models.DateField(verbose_name='Date')
+    weight = models.DecimalField('Current Weight', decimal_places=2, max_digits=5, null=True, blank=True)
+    neck = models.PositiveSmallIntegerField('Neck Size (cm)', null=True, blank=True)
+    chest = models.PositiveSmallIntegerField('Chest Size (cm)', null=True, blank=True)
+    shoulder = models.PositiveSmallIntegerField('Shoulder Size (cm)', null=True, blank=True)
+    back = models.PositiveSmallIntegerField('Back Size (cm)', null=True, blank=True)
+    waist = models.PositiveSmallIntegerField('Waist Size (cm)', null=True, blank=True)
+    abdomen = models.PositiveSmallIntegerField('Abdomen Size (cm)', null=True, blank=True)
+    hips = models.PositiveSmallIntegerField('Hips Size (cm)', null=True, blank=True)
+    thigh_r = models.PositiveSmallIntegerField('Right Thigh Size (cm)', null=True, blank=True)
+    thigh_l = models.PositiveSmallIntegerField('Left Thigh Size (cm)', null=True, blank=True)
+    calf_r = models.PositiveSmallIntegerField('Right Calf Size (cm)', null=True, blank=True)
+    calf_l = models.PositiveSmallIntegerField('Calf Left Size (cm)', null=True, blank=True)
+    biceps_r = models.PositiveSmallIntegerField('Right Biceps Size (cm)', null=True, blank=True)
+    biceps_l = models.PositiveSmallIntegerField('Left Biceps Size (cm)', null=True, blank=True)
+    forearm_r = models.PositiveSmallIntegerField('Right Forearm Size (cm)', null=True, blank=True)
+    forearm_l = models.PositiveSmallIntegerField('Left Forearm Size (cm)', null=True, blank=True)
+    wrist_r = models.PositiveSmallIntegerField('Right Wrist Size (cm)', null=True, blank=True)
+    wrist_l = models.PositiveSmallIntegerField('Left Wrist Size (cm)', null=True, blank=True)
+
+
+class UserPhisyqueStatusPhoto(models.Model):
+    status = models.ForeignKey(to=UserPhisyqueStatus, on_delete=models.CASCADE)
+    photo = models.ImageField(verbose_name='Photo', upload_to=get_photo_path)
+    label = models.CharField(verbose_name='Label', max_length=50, null=True, blank=True)
 
 
 class BaseExercise(models.Model):
@@ -84,7 +158,7 @@ class BaseExercise(models.Model):
 
 
 class CustomUserExercise(BaseExercise):
-    user = models.ForeignKey(to=User, on_delete=models.CASCADE)
+    user = models.ForeignKey(to=WorkoutUser, on_delete=models.CASCADE)
 
     class Meta:
         verbose_name = "Custom User Exercise"
@@ -92,3 +166,46 @@ class CustomUserExercise(BaseExercise):
 
     def __str__(self):
         return self.name
+
+
+class WorkoutSession(models.Model):
+    date = models.DateField(verbose_name='Date')
+    time = models.TimeField(verbose_name='Time')
+    user = models.ForeignKey(to=WorkoutUser, on_delete=models.CASCADE)
+
+    def total_exercises(self):
+        pass
+
+    def total_reps(self):
+        pass
+
+    def total_weight(self):
+        pass
+
+
+class WorkoutExercise(models.Model):
+    workout_session = models.ForeignKey(verbose_name='Workout Session', to=WorkoutSession, on_delete=models.CASCADE)
+    exercise = models.ForeignKey(verbose_name='Exercise', to=CustomUserExercise, on_delete=models.DO_NOTHING)
+
+
+class Set(models.Model):
+    exercise = models.ForeignKey(verbose_name='Exercise', to=WorkoutExercise, on_delete=models.CASCADE)
+    weight = models.DecimalField(verbose_name='Weight Used', decimal_places=2, max_digits=7, default=0.00)
+    reps = models.PositiveSmallIntegerField(verbose_name='Reps Done', default=1)
+    rest_time = models.PositiveSmallIntegerField(verbose_name='Rest Time (sec)', default=60)
+
+
+class WorkoutTemplate(models.Model):
+    name = models.CharField(verbose_name='Template Name', max_length=100)
+    user = models.ForeignKey(to=WorkoutUser, on_delete=models.CASCADE)
+
+
+class WorkoutExerciseTemplate(models.Model):
+    workout_template = models.ForeignKey(verbose_name='Workout Template', to=WorkoutTemplate, on_delete=models.CASCADE)
+    exercise = models.ForeignKey(verbose_name='Exercise', to=CustomUserExercise, on_delete=models.DO_NOTHING)
+
+
+class SetTemplate(models.Model):
+    exercise = models.ForeignKey(verbose_name='Exercise Template', to=WorkoutExerciseTemplate, on_delete=models.CASCADE)
+    weight = models.DecimalField(verbose_name='Weight', decimal_places=2, max_digits=7, default=0.00)
+    reps = models.PositiveSmallIntegerField(verbose_name='Reps', default=1)
