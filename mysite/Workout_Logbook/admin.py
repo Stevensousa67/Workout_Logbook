@@ -47,7 +47,7 @@ class SetTemplateInline(nested_admin.NestedStackedInline):
 class WorkoutExerciseTemplateInline(nested_admin.NestedStackedInline):
     extra = 0
     model = WorkoutExerciseTemplate
-    inlines = [SetInline]
+    inlines = [SetTemplateInline]
 
 
 @admin.register(WorkoutTemplate)
