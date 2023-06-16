@@ -1,6 +1,8 @@
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models.signals import pre_save
+from django.dispatch import receiver
 from multiselectfield import MultiSelectField
 
 
@@ -157,8 +159,15 @@ class BaseExercise(models.Model):
         abstract = True
 
 
+class PrefilledExercise(BaseExercise):
+    class Meta:
+        verbose_name = "Pre-filled Exercise"
+        verbose_name_plural = "Pre-filled Exercises"
+
+
 class CustomUserExercise(BaseExercise):
     user = models.ForeignKey(to=WorkoutUser, on_delete=models.CASCADE)
+    reference = models.ForeignKey(to=PrefilledExercise, on_delete=models.SET_NULL, null=True)
 
     class Meta:
         verbose_name = "Custom User Exercise"
@@ -166,6 +175,23 @@ class CustomUserExercise(BaseExercise):
 
     def __str__(self):
         return self.name
+
+
+@receiver(pre_save, sender=CustomUserExercise)
+def prefill_user_exercise(sender, instance: CustomUserExercise, *args, **kwargs):
+    """ Fills out a CustomUserExercise instance based on the PrefilledExercise selected
+    """
+    if not kwargs.get('created'):  # Only does this upon creation
+        return
+    if not instance.reference:  # If its a blank exercise, thus no reference, than theres nothing to be done
+        return
+    # Iterates through model fields. Because both CustomUserExercise and PrefilledExercise inherit from BaseExercise,
+    # their fields are identical, except for the fields defined on CustomUserExercise
+    for field in CustomUserExercise._meta.fields:
+        fieldname = field.name
+        if fieldname in ['id', 'reference', 'user']:  # These fields cannot be overwritten cuz theyre specific 4 CUsEx
+            continue
+        setattr(instance, fieldname, getattr(instance.reference, fieldname))
 
 
 class WorkoutSession(models.Model):
