@@ -1,7 +1,7 @@
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
 from django.db import models
-from django.db.models.signals import pre_save
+from django.db.models.signals import post_save
 from django.dispatch import receiver
 from multiselectfield import MultiSelectField
 
@@ -34,7 +34,6 @@ class WorkoutUserManager(BaseUserManager):
 
 
 class WorkoutUser(AbstractUser):
-
     class GenderChoices(models.TextChoices):
         MALE = 'M', 'Male'
         FEMA = 'F', 'Female'
@@ -45,7 +44,8 @@ class WorkoutUser(AbstractUser):
     email = models.EmailField('Email address', unique=True)
     height = models.PositiveSmallIntegerField(verbose_name='Height (cm)')
     birthday = models.DateField(verbose_name='Birth Day')
-    gender = models.CharField(verbose_name='Gender', max_length=2, choices=GenderChoices.choices, default=GenderChoices.MALE)
+    gender = models.CharField(verbose_name='Gender', max_length=2, choices=GenderChoices.choices,
+                              default=GenderChoices.MALE)
 
     objects = WorkoutUserManager()
 
@@ -144,13 +144,20 @@ class BaseExercise(models.Model):
 
     name = models.CharField(verbose_name="Exercise Name", max_length=100, null=True, blank=True)
     aliases = models.CharField(verbose_name="Aliases", max_length=100, null=True, blank=True, help_text="(optional)")
-    primary_muscles = MultiSelectField(verbose_name="Primary Muscles", choices=MuscleGroupChoices.choices, max_length=100, default=MuscleGroupChoices.shoulders, null=True, blank=True)
-    secondary_muscles = MultiSelectField(verbose_name="Secondary Muscles", choices=MuscleGroupChoices.choices, max_length=100, default=MuscleGroupChoices.shoulders, null=True, blank=True)
-    force = models.CharField(verbose_name="Force", max_length=4, choices=ForceChoices.choices, default=ForceChoices.pull, null=True)
-    level = models.CharField(verbose_name="Level", max_length=3, choices=LevelChoices.choices, default=LevelChoices.intermediate)
-    mechanic = models.CharField(verbose_name="Mechanic", max_length=4, choices=MechanicChoices.choices, default=MechanicChoices.compound, null=True)
-    equipment = models.CharField(verbose_name="Equipment", max_length=3, choices=EquipmentChoices.choices, default=EquipmentChoices.machine, null=True)
-    category = models.CharField(verbose_name="Category", max_length=5, choices=CategoryChoices.choices, default=CategoryChoices.strength)
+    primary_muscles = MultiSelectField(verbose_name="Primary Muscles", choices=MuscleGroupChoices.choices,
+                                       max_length=100, default=MuscleGroupChoices.shoulders, null=True, blank=True)
+    secondary_muscles = MultiSelectField(verbose_name="Secondary Muscles", choices=MuscleGroupChoices.choices,
+                                         max_length=100, default=MuscleGroupChoices.shoulders, null=True, blank=True)
+    force = models.CharField(verbose_name="Force", max_length=4, choices=ForceChoices.choices,
+                             default=ForceChoices.pull, null=True)
+    level = models.CharField(verbose_name="Level", max_length=3, choices=LevelChoices.choices,
+                             default=LevelChoices.intermediate)
+    mechanic = models.CharField(verbose_name="Mechanic", max_length=4, choices=MechanicChoices.choices,
+                                default=MechanicChoices.compound, null=True)
+    equipment = models.CharField(verbose_name="Equipment", max_length=3, choices=EquipmentChoices.choices,
+                                 default=EquipmentChoices.machine, null=True)
+    category = models.CharField(verbose_name="Category", max_length=5, choices=CategoryChoices.choices,
+                                default=CategoryChoices.strength)
     instructions = models.TextField(verbose_name="Instructions", null=True, blank=True, help_text="(optional)")
     description = models.TextField(verbose_name="Description", null=True, blank=True, help_text="(optional)")
     tips = models.TextField(verbose_name="Tips", null=True, blank=True, help_text="(optional)")
@@ -177,27 +184,29 @@ class CustomUserExercise(BaseExercise):
         return self.name
 
 
-@receiver(pre_save, sender=CustomUserExercise)
-def prefill_user_exercise(sender, instance: CustomUserExercise, *args, **kwargs):
-    """ Fills out a CustomUserExercise instance based on the PrefilledExercise selected
-    """
-    if not kwargs.get('created'):  # Only does this upon creation
-        return
-    if not instance.reference:  # If its a blank exercise, thus no reference, than theres nothing to be done
-        return
-    # Iterates through model fields. Because both CustomUserExercise and PrefilledExercise inherit from BaseExercise,
-    # their fields are identical, except for the fields defined on CustomUserExercise
-    for field in CustomUserExercise._meta.fields:
-        fieldname = field.name
-        if fieldname in ['id', 'reference', 'user']:  # These fields cannot be overwritten cuz theyre specific 4 CUsEx
-            continue
-        setattr(instance, fieldname, getattr(instance.reference, fieldname))
+class WorkoutTemplate(models.Model):
+    name = models.CharField(verbose_name='Template Name', max_length=100)
+    user = models.ForeignKey(to=WorkoutUser, on_delete=models.CASCADE)
+
+
+class WorkoutExerciseTemplate(models.Model):
+    workout_template = models.ForeignKey(verbose_name='Workout', to=WorkoutTemplate, on_delete=models.CASCADE)
+    exercise = models.ForeignKey(verbose_name='Exercise', to=CustomUserExercise, on_delete=models.PROTECT)
+
+
+class SetTemplate(models.Model):
+    exercise = models.ForeignKey(verbose_name='Exercise', to=WorkoutExerciseTemplate, on_delete=models.CASCADE)
+    weight = models.DecimalField(verbose_name='Weight', decimal_places=2, max_digits=7, default=0.00)
+    reps = models.PositiveSmallIntegerField(verbose_name='Reps', default=1)
+    rest_time = models.PositiveSmallIntegerField(verbose_name='Rest Time (sec)', default=60)
 
 
 class WorkoutSession(models.Model):
     date = models.DateField(verbose_name='Date')
     time = models.TimeField(verbose_name='Time')
     user = models.ForeignKey(to=WorkoutUser, on_delete=models.CASCADE)
+    template = models.ForeignKey(verbose_name='Template', to=WorkoutTemplate, on_delete=models.SET_NULL, null=True,
+                                 blank=True)
 
     def total_exercises(self):
         pass
@@ -211,7 +220,7 @@ class WorkoutSession(models.Model):
 
 class WorkoutExercise(models.Model):
     workout_session = models.ForeignKey(verbose_name='Workout Session', to=WorkoutSession, on_delete=models.CASCADE)
-    exercise = models.ForeignKey(verbose_name='Exercise', to=CustomUserExercise, on_delete=models.DO_NOTHING)
+    exercise = models.ForeignKey(verbose_name='Exercise', to=CustomUserExercise, on_delete=models.PROTECT)
 
 
 class Set(models.Model):
@@ -221,17 +230,16 @@ class Set(models.Model):
     rest_time = models.PositiveSmallIntegerField(verbose_name='Rest Time (sec)', default=60)
 
 
-class WorkoutTemplate(models.Model):
-    name = models.CharField(verbose_name='Template Name', max_length=100)
-    user = models.ForeignKey(to=WorkoutUser, on_delete=models.CASCADE)
-
-
-class WorkoutExerciseTemplate(models.Model):
-    workout_template = models.ForeignKey(verbose_name='Workout Template', to=WorkoutTemplate, on_delete=models.CASCADE)
-    exercise = models.ForeignKey(verbose_name='Exercise', to=CustomUserExercise, on_delete=models.DO_NOTHING)
-
-
-class SetTemplate(models.Model):
-    exercise = models.ForeignKey(verbose_name='Exercise Template', to=WorkoutExerciseTemplate, on_delete=models.CASCADE)
-    weight = models.DecimalField(verbose_name='Weight', decimal_places=2, max_digits=7, default=0.00)
-    reps = models.PositiveSmallIntegerField(verbose_name='Reps', default=1)
+@receiver(post_save, sender=WorkoutSession)
+def prefill_workout(sender, instance: CustomUserExercise, *args, **kwargs):
+    """ Fills out a WorkoutSession based on the template selected
+    """
+    template = kwargs.get('template')
+    if not template:  # Only does this if a template has been selected
+        return
+    template = WorkoutTemplate.objects.get(id=template)
+    for w_exercise_t in template.workoutexercisetemplate_set.all():
+        w_ex = WorkoutExercise.objects.create(workout_session=instance, exercise=w_exercise_t.exercise)
+        for w_set in w_exercise_t.settemplate_set.all():
+            Set.objects.create(exercise=w_ex, weight=w_set.weight, reps=w_set.reps, rest_time=w_set.rest_time)
+    instance.template = None
