@@ -1,10 +1,46 @@
 import nested_admin
 from django.contrib import admin
 
+from Workout_Logbook.forms import CustomUserExerciseForm
 from Workout_Logbook.models import CustomUserExercise, WorkoutUser, UserPhisyqueStatus, UserPhisyqueStatusPhoto, \
-    WorkoutSession, WorkoutExercise, Set, WorkoutTemplate, WorkoutExerciseTemplate, SetTemplate
+    WorkoutSession, WorkoutExercise, Set, WorkoutTemplate, WorkoutExerciseTemplate, SetTemplate, PrefilledExercise
 
-admin.site.register(CustomUserExercise)
+admin.site.register(PrefilledExercise)
+
+
+@admin.register(CustomUserExercise)
+class CustomUserExerciseAdmin(admin.ModelAdmin):
+    form = CustomUserExerciseForm
+    search_fields = [
+        'name',
+        'aliases',
+    ]
+    list_filter = [
+        'user',
+        # 'primary_muscles',
+        # 'secondary_muscles',
+        'force',
+        'level',
+        'mechanic',
+        'equipment',
+        'category',
+    ]
+    fields = [
+        'user',
+        'reference',
+        'name',
+        'aliases',
+        'primary_muscles',
+        'secondary_muscles',
+        'force',
+        'level',
+        'mechanic',
+        'equipment',
+        'category',
+        'instructions',
+        'description',
+        'tips',
+    ]
 
 
 class UserPhisyqueStatusPhotoInline(nested_admin.NestedStackedInline):
