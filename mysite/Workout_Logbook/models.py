@@ -142,14 +142,14 @@ class BaseExercise(models.Model):
         weighted_bodyweight = "weibw", "weighted bodyweight",
         assisted_bodyweight = "assbw", "assisted bodyweight",
 
-    name = models.CharField(verbose_name="Exercise Name", max_length=100)
+    name = models.CharField(verbose_name="Exercise Name", max_length=100, null=True, blank=True)
     aliases = models.CharField(verbose_name="Aliases", max_length=100, null=True, blank=True, help_text="(optional)")
-    primary_muscles = MultiSelectField(verbose_name="Primary Muscles", choices=MuscleGroupChoices.choices, max_length=3, default=MuscleGroupChoices.shoulders, null=True, blank=True)
-    secondary_muscles = MultiSelectField(verbose_name="Secondary Muscles", choices=MuscleGroupChoices.choices, max_length=3, default=MuscleGroupChoices.shoulders, null=True, blank=True)
-    force = models.CharField(verbose_name="Force", max_length=4, choices=ForceChoices.choices, default=ForceChoices.pull)
+    primary_muscles = MultiSelectField(verbose_name="Primary Muscles", choices=MuscleGroupChoices.choices, max_length=100, default=MuscleGroupChoices.shoulders, null=True, blank=True)
+    secondary_muscles = MultiSelectField(verbose_name="Secondary Muscles", choices=MuscleGroupChoices.choices, max_length=100, default=MuscleGroupChoices.shoulders, null=True, blank=True)
+    force = models.CharField(verbose_name="Force", max_length=4, choices=ForceChoices.choices, default=ForceChoices.pull, null=True)
     level = models.CharField(verbose_name="Level", max_length=3, choices=LevelChoices.choices, default=LevelChoices.intermediate)
-    mechanic = models.CharField(verbose_name="Mechanic", max_length=4, choices=MechanicChoices.choices, default=MechanicChoices.compound)
-    equipment = models.CharField(verbose_name="Equipment", max_length=3, choices=EquipmentChoices.choices, default=EquipmentChoices.machine)
+    mechanic = models.CharField(verbose_name="Mechanic", max_length=4, choices=MechanicChoices.choices, default=MechanicChoices.compound, null=True)
+    equipment = models.CharField(verbose_name="Equipment", max_length=3, choices=EquipmentChoices.choices, default=EquipmentChoices.machine, null=True)
     category = models.CharField(verbose_name="Category", max_length=5, choices=CategoryChoices.choices, default=CategoryChoices.strength)
     instructions = models.TextField(verbose_name="Instructions", null=True, blank=True, help_text="(optional)")
     description = models.TextField(verbose_name="Description", null=True, blank=True, help_text="(optional)")
@@ -167,7 +167,7 @@ class PrefilledExercise(BaseExercise):
 
 class CustomUserExercise(BaseExercise):
     user = models.ForeignKey(to=WorkoutUser, on_delete=models.CASCADE)
-    reference = models.ForeignKey(to=PrefilledExercise, on_delete=models.SET_NULL, null=True)
+    reference = models.ForeignKey(to=PrefilledExercise, on_delete=models.SET_NULL, null=True, blank=True)
 
     class Meta:
         verbose_name = "Custom User Exercise"
