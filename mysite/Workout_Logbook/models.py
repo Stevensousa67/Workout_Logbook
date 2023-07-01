@@ -1,6 +1,10 @@
+import decimal
+from typing import List
+
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models import Sum
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from multiselectfield import MultiSelectField
@@ -171,6 +175,9 @@ class PrefilledExercise(BaseExercise):
         verbose_name = "Pre-filled Exercise"
         verbose_name_plural = "Pre-filled Exercises"
 
+    def __str__(self):
+        return self.name
+
 
 class CustomUserExercise(BaseExercise):
     user = models.ForeignKey(to=WorkoutUser, on_delete=models.CASCADE)
@@ -187,6 +194,9 @@ class CustomUserExercise(BaseExercise):
 class WorkoutTemplate(models.Model):
     name = models.CharField(verbose_name='Template Name', max_length=100)
     user = models.ForeignKey(to=WorkoutUser, on_delete=models.CASCADE)
+
+    def __str__(self):
+        return self.name
 
 
 class WorkoutExerciseTemplate(models.Model):
@@ -208,19 +218,77 @@ class WorkoutSession(models.Model):
     template = models.ForeignKey(verbose_name='Template', to=WorkoutTemplate, on_delete=models.SET_NULL, null=True,
                                  blank=True)
 
-    def total_exercises(self):
-        pass
+    def __str__(self):
+        return f'{self.user} @ {self.date.strftime("%d/%m/%Y")} ({self.template.name if self.template else "-"})'
 
-    def total_reps(self):
-        pass
+    def save(self, force_insert=False, force_update=False, using=None, update_fields=None):
+        """ Cria os exercicios e sets com base no template, se houver algum
+        """
+        super().save(force_insert, force_update, using, update_fields)
+        if not self.template:
+            return
+        for exercise_template in self.template.workoutexercisetemplate_set.all():
+            exercise = WorkoutExercise.objects.create(workout_session=self, exercise=exercise_template.exercise)
+            for set_template in exercise_template.settemplate_set.all():
+                Set.objects.create(exercise=exercise, weight=set_template.weight, reps=set_template.reps,
+                                   rest_time=set_template.rest_time)
 
-    def total_weight(self):
-        pass
+    def total_exercises(self) -> int:
+        """
+        Retorna a quantidade de exercicios realizados nessa sessao
+        """
+        return self.workoutexercise_set.count()
+
+    def all_sets(self) -> List['Set']:
+        """
+        Retorna uma lista com todos os sets realizados nessa sessao
+        """
+        sets = []
+        for exercise in self.workoutexercise_set.all():
+            sets.append(exercise.set_set.all())
+        from itertools import chain
+        return list(chain(*sets))
+
+    def total_reps(self) -> int:
+        """
+        Retorna o total de repeticoes feita nessa sessao
+        """
+        return sum([set.reps for set in self.all_sets()])
+
+    def total_weight(self) -> decimal.Decimal:
+        """
+        Retorna o peso total levantado nessa sessao
+        """
+        return sum([set.weight for set in self.all_sets()])
+
+    def total_load(self) -> decimal.Decimal:
+        """
+        Retorna a carga total dessa sessao
+        """
+        return self.total_reps() * self.total_weight()
 
 
 class WorkoutExercise(models.Model):
     workout_session = models.ForeignKey(verbose_name='Workout Session', to=WorkoutSession, on_delete=models.CASCADE)
     exercise = models.ForeignKey(verbose_name='Exercise', to=CustomUserExercise, on_delete=models.PROTECT)
+
+    def total_reps(self) -> int:
+        """
+        Retorna o total de repeticoes feitas nesse exercicio feito
+        """
+        return sum(self.set_set.all().values_list('reps', flat=True))
+
+    def total_weight(self) -> decimal.Decimal:
+        """
+        Retorna o peso total levantado nesse exercicio feito
+        """
+        return sum(self.set_set.all().values_list('weight', flat=True))
+
+    def total_load(self) -> decimal.Decimal:
+        """
+        Retorna a carga total desse exercicio feito
+        """
+        return self.total_reps() * self.total_weight()
 
 
 class Set(models.Model):
@@ -228,6 +296,9 @@ class Set(models.Model):
     weight = models.DecimalField(verbose_name='Weight Used', decimal_places=2, max_digits=7, default=0.00)
     reps = models.PositiveSmallIntegerField(verbose_name='Reps Done', default=1)
     rest_time = models.PositiveSmallIntegerField(verbose_name='Rest Time (sec)', default=60)
+
+    def __str__(self):
+        return f'{self.exercise.exercise.name} - {self.weight}:{self.reps}:{self.rest_time}'
 
 
 @receiver(post_save, sender=WorkoutSession)

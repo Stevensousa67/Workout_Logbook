@@ -10,12 +10,17 @@ class CustomUserExerciseForm(forms.ModelForm):
     def clean(self):
         cleaned_data = super().clean()
         reference = cleaned_data.get('reference')
+        name = cleaned_data.get('name')
         if not reference:
-            if not cleaned_data.get('name'):
+            if not name:
                 self.add_error('name', 'This field is mandatory.')
             return cleaned_data
         for field_name, field in cleaned_data.items():
             if field_name in ['user', 'reference', 'tips', 'description', 'aliases']:
                 continue
-            cleaned_data[field_name] = cleaned_data[field_name] or getattr(reference, field_name)
+            if field_name == 'name':
+                cleaned_data['name'] = name or reference.name
+                continue
+            cleaned_data[field_name] = getattr(reference, field_name) or cleaned_data[field_name]
+        cleaned_data['reference'] = None
         return cleaned_data

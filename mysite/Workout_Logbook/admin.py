@@ -73,6 +73,22 @@ class WorkoutExerciseInline(nested_admin.NestedStackedInline):
 @admin.register(WorkoutSession)
 class WorkoutSessionAdmin(nested_admin.NestedModelAdmin):
     inlines = [WorkoutExerciseInline]
+    readonly_fields = [
+        'total_exercises',
+        'total_reps',
+        'total_weight',
+        'total_load',
+    ]
+    fields = [
+        'user',
+        'date',
+        'time',
+        'total_exercises',
+        'total_reps',
+        'total_weight',
+        'total_load',
+        'template',
+    ]
 
 
 class SetTemplateInline(nested_admin.NestedStackedInline):
