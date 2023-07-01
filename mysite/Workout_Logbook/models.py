@@ -1,4 +1,5 @@
 import decimal
+import math
 from typing import List
 
 from django.contrib.auth.base_user import BaseUserManager
@@ -190,6 +191,15 @@ class CustomUserExercise(BaseExercise):
     def __str__(self):
         return self.name
 
+    def history(self) -> List:
+        """
+        Retorna uma lista contendo o histórico desse exercicio para o usuário dele
+        Returns:
+            Lista contendo os dados de peso, reps e carga para determinados dias
+        """
+        return [{'date': w_ex.workout_session.date, 'reps': w_ex.total_reps(), 'weight': w_ex.total_weight(),
+                 'load': w_ex.total_load()} for w_ex in self.workoutexercise_set.all()]
+
 
 class WorkoutTemplate(models.Model):
     name = models.CharField(verbose_name='Template Name', max_length=100)
@@ -198,10 +208,50 @@ class WorkoutTemplate(models.Model):
     def __str__(self):
         return self.name
 
+    # todo: colocar quantidade de exercicios separada por grupo muscular
+
+    def eta(self) -> int:
+        """
+        Retorna um tempo estimado necessário para a execução dessa ficha
+        Returns:
+            Tempo, em minutos
+        """
+        return math.ceil(sum([
+            w_ex.eta() + (5*60)  # Tempo estimado pra cada exercicio + 5min de descanso entre os exercicios
+            for w_ex in self.workoutexercisetemplate_set.all()
+        ])/60)
+
+    def total_exercises(self) -> int:
+        """
+        Retorna a quantidade de exercicios planejados para essa ficha
+        """
+        return self.workoutexercisetemplate_set.count()
+
+    def history(self) -> List:
+        """
+        Retorna uma lista contendo o histórico dessa ficha para o usuário dela
+        Returns:
+            Lista contendo os dados de peso, reps e carga para determinados dias
+        """
+        return [{'date': w_session.date, 'reps': w_session.total_reps(), 'weight': w_session.total_weight(),
+                 'load': w_session.total_load()} for w_session in self.workoutsession_set.all()]
+
 
 class WorkoutExerciseTemplate(models.Model):
     workout_template = models.ForeignKey(verbose_name='Workout', to=WorkoutTemplate, on_delete=models.CASCADE)
     exercise = models.ForeignKey(verbose_name='Exercise', to=CustomUserExercise, on_delete=models.PROTECT)
+
+    def eta(self) -> int:
+        """
+        Retorna um tempo estimado necessário para a execução desse exercicio
+        Returns:
+            Tempo, em segundos
+        """
+        return sum([
+            7 * set.reps +  # Estima-se que uma repetição bem feita dure 7 segundos
+            set.rest_time  # Soma-se o tempo de descanso entre as séries
+            for set in self.settemplate_set.all()
+        ])
 
 
 class SetTemplate(models.Model):
