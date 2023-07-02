@@ -1,14 +1,18 @@
 import decimal
 import math
+from _decimal import Decimal
 from typing import List
-
+from django.utils.translation import gettext_lazy as _
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
-from django.db.models import Sum
-from django.db.models.signals import post_save
-from django.dispatch import receiver
 from multiselectfield import MultiSelectField
+
+from Workout_Logbook.base_model import BaseModel
+
+PERCENTAGE_VALIDATOR = [MinValueValidator(0), MaxValueValidator(100)]
 
 
 def get_photo_path(instance, filename):
@@ -38,7 +42,7 @@ class WorkoutUserManager(BaseUserManager):
         return user
 
 
-class WorkoutUser(AbstractUser):
+class WorkoutUser(AbstractUser, BaseModel):
     class GenderChoices(models.TextChoices):
         MALE = 'M', 'Male'
         FEMA = 'F', 'Female'
@@ -54,11 +58,20 @@ class WorkoutUser(AbstractUser):
 
     objects = WorkoutUserManager()
 
+    @classmethod
+    def get_queryset(cls, user_id):
+        return cls.objects.all()
 
-class UserPhisyqueStatus(models.Model):
+    def owner_id(self):
+        return self.id
+
+
+class UserPhisyqueStatus(BaseModel):
     user = models.ForeignKey(to=WorkoutUser, on_delete=models.CASCADE)
     date = models.DateField(verbose_name='Date')
     weight = models.DecimalField('Current Weight', decimal_places=2, max_digits=5, null=True, blank=True)
+    body_fat = models.DecimalField('Body Fat (%)', decimal_places=2, max_digits=5, null=True, blank=True,
+                                   default=Decimal(0), validators=PERCENTAGE_VALIDATOR)
     neck = models.PositiveSmallIntegerField('Neck Size (cm)', null=True, blank=True)
     chest = models.PositiveSmallIntegerField('Chest Size (cm)', null=True, blank=True)
     shoulder = models.PositiveSmallIntegerField('Shoulder Size (cm)', null=True, blank=True)
@@ -77,11 +90,25 @@ class UserPhisyqueStatus(models.Model):
     wrist_r = models.PositiveSmallIntegerField('Right Wrist Size (cm)', null=True, blank=True)
     wrist_l = models.PositiveSmallIntegerField('Left Wrist Size (cm)', null=True, blank=True)
 
+    @classmethod
+    def get_queryset(cls, user_id):
+        return cls.objects.filter(user_id__exact=user_id)
 
-class UserPhisyqueStatusPhoto(models.Model):
+    def owner_id(self):
+        return self.user.owner_id()
+
+
+class UserPhisyqueStatusPhoto(BaseModel):
     status = models.ForeignKey(to=UserPhisyqueStatus, on_delete=models.CASCADE)
     photo = models.ImageField(verbose_name='Photo', upload_to=get_photo_path)
     label = models.CharField(verbose_name='Label', max_length=50, null=True, blank=True)
+
+    @classmethod
+    def get_queryset(cls, user_id):
+        return cls.objects.filter(status__user_id__exact=user_id)
+
+    def owner_id(self):
+        return self.status.owner_id()
 
 
 class BaseExercise(models.Model):
@@ -171,13 +198,20 @@ class BaseExercise(models.Model):
         abstract = True
 
 
-class PrefilledExercise(BaseExercise):
+class PrefilledExercise(BaseExercise, BaseModel):
     class Meta:
         verbose_name = "Pre-filled Exercise"
         verbose_name_plural = "Pre-filled Exercises"
 
     def __str__(self):
         return self.name
+
+    @classmethod
+    def get_queryset(cls, user_id):
+        return cls.objects.all()
+
+    def owner_id(self):
+        return None
 
 
 class CustomUserExercise(BaseExercise):
@@ -190,6 +224,35 @@ class CustomUserExercise(BaseExercise):
 
     def __str__(self):
         return self.name
+
+    def save(self, force_insert=False, force_update=False, using=None, update_fields=None):
+        """
+        Preenche os campos do exercicio com base na referencia. Ao final, define a referencia como nula pra permitir
+        futuras edicoes no exercicio customizado
+        """
+        reference = self.reference
+        name = self.name
+        if not reference:
+            if not name:
+                raise ValidationError(_('Name field is mandatory'))
+            return
+        for field in self._meta.get_fields():
+            field_name = field.name
+            if field_name in ['id', 'user', 'reference', 'tips', 'description', 'aliases']:
+                continue
+            if field_name == 'name':
+                self.name = name or reference.name
+                continue
+            setattr(self, field_name, getattr(reference, field_name) or getattr(self, field_name))
+        self.reference = None
+        super().save(force_insert, force_update, using, update_fields)
+
+    @classmethod
+    def get_queryset(cls, user_id):
+        return cls.objects.filter(user_id__exact=user_id)
+
+    def owner_id(self):
+        return self.user.owner_id()
 
     def history(self) -> List:
         """
@@ -208,6 +271,13 @@ class WorkoutTemplate(models.Model):
     def __str__(self):
         return self.name
 
+    @classmethod
+    def get_queryset(cls, user_id):
+        return cls.objects.filter(user_id__exact=user_id)
+
+    def owner_id(self):
+        return self.user.owner_id()
+
     # todo: colocar quantidade de exercicios separada por grupo muscular
 
     def eta(self) -> int:
@@ -217,9 +287,9 @@ class WorkoutTemplate(models.Model):
             Tempo, em minutos
         """
         return math.ceil(sum([
-            w_ex.eta() + (5*60)  # Tempo estimado pra cada exercicio + 5min de descanso entre os exercicios
+            w_ex.eta() + (5 * 60)  # Tempo estimado pra cada exercicio + 5min de descanso entre os exercicios
             for w_ex in self.workoutexercisetemplate_set.all()
-        ])/60)
+        ]) / 60)
 
     def total_exercises(self) -> int:
         """
@@ -241,6 +311,13 @@ class WorkoutExerciseTemplate(models.Model):
     workout_template = models.ForeignKey(verbose_name='Workout', to=WorkoutTemplate, on_delete=models.CASCADE)
     exercise = models.ForeignKey(verbose_name='Exercise', to=CustomUserExercise, on_delete=models.PROTECT)
 
+    @classmethod
+    def get_queryset(cls, user_id):
+        return cls.objects.filter(workout_template__user_id__exact=user_id)
+
+    def owner_id(self):
+        return self.workout_template.owner_id()
+
     def eta(self) -> int:
         """
         Retorna um tempo estimado necessário para a execução desse exercicio
@@ -260,6 +337,13 @@ class SetTemplate(models.Model):
     reps = models.PositiveSmallIntegerField(verbose_name='Reps', default=1)
     rest_time = models.PositiveSmallIntegerField(verbose_name='Rest Time (sec)', default=60)
 
+    @classmethod
+    def get_queryset(cls, user_id):
+        return cls.objects.filter(exercise__workout_template__user_id__exact=user_id)
+
+    def owner_id(self):
+        return self.exercise.owner_id()
+
 
 class WorkoutSession(models.Model):
     date = models.DateField(verbose_name='Date')
@@ -270,6 +354,13 @@ class WorkoutSession(models.Model):
 
     def __str__(self):
         return f'{self.user} @ {self.date.strftime("%d/%m/%Y")} ({self.template.name if self.template else "-"})'
+
+    @classmethod
+    def get_queryset(cls, user_id):
+        return cls.objects.filter(user_id__exact=user_id)
+
+    def owner_id(self):
+        return self.user.owner_id()
 
     def save(self, force_insert=False, force_update=False, using=None, update_fields=None):
         """ Cria os exercicios e sets com base no template, se houver algum
@@ -322,6 +413,16 @@ class WorkoutExercise(models.Model):
     workout_session = models.ForeignKey(verbose_name='Workout Session', to=WorkoutSession, on_delete=models.CASCADE)
     exercise = models.ForeignKey(verbose_name='Exercise', to=CustomUserExercise, on_delete=models.PROTECT)
 
+    def __str__(self):
+        return self.exercise.name
+
+    @classmethod
+    def get_queryset(cls, user_id):
+        return cls.objects.filter(workout_session__user_id__exact=user_id)
+
+    def owner_id(self):
+        return self.workout_session.owner_id()
+
     def total_reps(self) -> int:
         """
         Retorna o total de repeticoes feitas nesse exercicio feito
@@ -350,17 +451,9 @@ class Set(models.Model):
     def __str__(self):
         return f'{self.exercise.exercise.name} - {self.weight}:{self.reps}:{self.rest_time}'
 
+    @classmethod
+    def get_queryset(cls, user_id):
+        return cls.objects.filter(exercise__workout_session__user_id__exact=user_id)
 
-@receiver(post_save, sender=WorkoutSession)
-def prefill_workout(sender, instance: CustomUserExercise, *args, **kwargs):
-    """ Fills out a WorkoutSession based on the template selected
-    """
-    template = kwargs.get('template')
-    if not template:  # Only does this if a template has been selected
-        return
-    template = WorkoutTemplate.objects.get(id=template)
-    for w_exercise_t in template.workoutexercisetemplate_set.all():
-        w_ex = WorkoutExercise.objects.create(workout_session=instance, exercise=w_exercise_t.exercise)
-        for w_set in w_exercise_t.settemplate_set.all():
-            Set.objects.create(exercise=w_ex, weight=w_set.weight, reps=w_set.reps, rest_time=w_set.rest_time)
-    instance.template = None
+    def owner_id(self):
+        return self.exercise.owner_id()
