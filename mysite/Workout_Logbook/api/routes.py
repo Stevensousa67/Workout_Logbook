@@ -3,6 +3,7 @@ from .viewsets import WorkoutUserViewSet, UserPhisyqueStatusViewSet, UserPhisyqu
     SetTemplateViewSet, WorkoutSessionViewSet, WorkoutExerciseViewSet, SetViewSet
 
 from rest_framework.routers import DefaultRouter
+from .auth.routes import router as auth_routes
 
 app_name = 'Workout_Logbook'
 
@@ -18,4 +19,4 @@ router.register(r'set-templates', SetTemplateViewSet, basename='set_template')
 router.register(r'workout-sessions', WorkoutSessionViewSet, basename='workout_session')
 router.register(r'workout-exercises', WorkoutExerciseViewSet, basename='workout_exercise')
 router.register(r'sets', SetViewSet, basename='set')
-routes = router.urls
+routes = router.urls + auth_routes
